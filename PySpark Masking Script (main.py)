@@ -1,0 +1,39 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import sha2, col, when
+import argparse
+
+def mask_pii(input_path, output_path, region_filter="EU"):
+    """
+    Masks PII fields (email, phone) for GDPR compliance.
+    """
+    spark = SparkSession.builder \
+        .appName("GDPR_PII_Masking") \
+        .config("spark.hadoop.fs.s3a.aws.credentials.provider", "com.amazonaws.auth.DefaultAWSCredentialsProviderChain") \
+        .getOrCreate()
+
+    # Read raw data from S3
+    raw_df = spark.read.format("csv").option("header", "true").load(input_path)
+
+    # Mask email/phone using SHA-256 hashing
+    masked_df = raw_df.withColumn("email_masked", sha2(col("email"), 256)) \
+        .withColumn("phone_masked", sha2(col("phone"), 256)) \
+        .drop("email", "phone")
+
+    # Conditional masking for EU customers
+    final_df = masked_df.withColumn(
+        "address_masked",
+        when(col("country") == region_filter, sha2(col("address"), 256)).otherwise(col("address"))
+    )
+
+    # Write to S3 in Parquet format
+    final_df.write.mode("overwrite").parquet(output_path)
+    spark.stop()
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", help="S3 input path (e.g., s3://bucket/raw_data/)")
+    parser.add_argument("--output", help="S3 output path (e.g., s3://bucket/masked_data/)")
+    parser.add_argument("--region", default="EU", help="Target region for strict masking")
+    args = parser.parse_args()
+
+    mask_pii(args.input, args.output, args.region)
