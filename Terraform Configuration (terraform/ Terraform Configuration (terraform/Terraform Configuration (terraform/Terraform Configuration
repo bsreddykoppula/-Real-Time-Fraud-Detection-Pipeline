@@ -1,0 +1,30 @@
+# Deploys AWS Glue Job and S3 Bucket
+provider "aws" {
+  region = "us-east-1"
+}
+
+resource "aws_glue_job" "gdpr_masking" {
+  name         = "gdpr-pii-masking-job"
+  role_arn     = aws_iam_role.glue_role.arn
+  glue_version = "3.0"
+
+  command {
+    script_location = "s3://your-bucket/scripts/main.py"
+  }
+
+  default_arguments = {
+    "--input"  = "s3://gdpr-raw-data/"
+    "--output" = "s3://gdpr-masked-data/"
+    "--region" = "EU"
+  }
+}
+
+resource "aws_s3_bucket" "raw_data" {
+  bucket = "gdpr-raw-data"
+  acl    = "private"
+}
+
+resource "aws_s3_bucket" "masked_data" {
+  bucket = "gdpr-masked-data"
+  acl    = "private"
+}
